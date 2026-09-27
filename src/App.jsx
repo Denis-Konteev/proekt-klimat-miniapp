@@ -320,6 +320,11 @@ const EVENTS_WEBHOOK_URL = "https://nifty-beluga.pikapod.net/webhook/log-event";
 const PROFILE_GET_URL = "https://nifty-beluga.pikapod.net/webhook/get-profile";
 const PROFILE_SAVE_URL = "https://nifty-beluga.pikapod.net/webhook/save-profile";
 const CHECKIN_URL = "https://nifty-beluga.pikapod.net/webhook/checkin";
+// Public channel feed — unlike the others above, this is not user-specific,
+// so it intentionally carries no initData signature; it's the same read for
+// every visitor. Expected response: an array of { image?, ru:{title,body},
+// en:{title,body}, uz:{title,body} } objects, newest first.
+const POSTS_GET_URL = "https://nifty-beluga.pikapod.net/webhook/get-posts";
 
 export default function App() {
   const [tab, setTab] = useState(0);
@@ -349,6 +354,7 @@ export default function App() {
   const [phoneRequestSent, setPhoneRequestSent] = useState(false);
   const [saveError, setSaveError] = useState(null);
   const [checkedInToday, setCheckedInToday] = useState(false);
+  const [posts, setPosts] = useState(null); // null = loading, [] = loaded but empty, [...] = has posts
   const fileInputRef = useRef(null);
   const dayOfWeek = new Date().getDay(); // 0 = Sunday, 6 = Saturday
   const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
@@ -385,6 +391,16 @@ export default function App() {
         username: tgUser.username || p.username,
       }));
     }
+  }, []);
+
+  // Public channel feed — no auth needed, so this runs independently of
+  // telegramId/initData being ready. Fails silently into an empty feed;
+  // the Home tab just renders nothing until posts exist.
+  useEffect(() => {
+    fetch(POSTS_GET_URL)
+      .then((r) => { if (!r.ok) throw new Error("bad response"); return r.json(); })
+      .then((data) => setPosts(Array.isArray(data) ? data : []))
+      .catch(() => setPosts([]));
   }, []);
 
   // Sends an event to the n8n webhook, which writes it into Supabase.
@@ -609,17 +625,7 @@ export default function App() {
     );
   }
 
-  function BookGlyph({ active }) {
-    const color = active ? NAV_ACTIVE : NAV_INACTIVE;
-    return (
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-        <path d="M12 6.2c-1.8-1.1-4-1.4-6-1v11.4c2-.4 4.2-.1 6 1 1.8-1.1 4-1.4 6-1V5.2c-2-.4-4.2-.1-6 1Z" stroke={color} strokeWidth="1.6" />
-        <path d="M12 6.2v11.4" stroke={color} strokeWidth="1.6" />
-      </svg>
-    );
-  }
-
-  const LOCKED_TABS = ["ai", "norms"];
+  const LOCKED_TABS = ["ai"];
 
   const tabs = [
     { key: "home", label: t.tab1, icon: (a) => <IconBox><HomeGlyph active={a} /></IconBox> },
@@ -629,16 +635,6 @@ export default function App() {
       icon: (a) => (
         <IconBox>
           <BulbGlyph active={a} />
-          <SoonStamp />
-        </IconBox>
-      ),
-    },
-    {
-      key: "norms",
-      label: t.tabNorms,
-      icon: (a) => (
-        <IconBox>
-          <BookGlyph active={a} />
           <SoonStamp />
         </IconBox>
       ),
@@ -804,7 +800,46 @@ export default function App() {
             padding: "4px 16px 16px",
           }}
         >
-          {tab === 0 && <div className="fadein" />}
+          {tab === 0 && (
+            <div className="fadein">
+              {posts === null && (
+                <div style={{ textAlign: "center", padding: "50px 10px", color: "#5C7996", fontSize: 12.5 }}>
+                  {lang === "ru" ? "Загрузка…" : lang === "en" ? "Loading…" : "Yuklanmoqda…"}
+                </div>
+              )}
+              {posts && posts.map((post, i) => {
+                const p = post[lang] || post.ru || {};
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      background: "#EEF3F8",
+                      border: "1px solid #D8E3EC",
+                      borderRadius: 10,
+                      padding: 14,
+                      marginBottom: 10,
+                    }}
+                  >
+                    {post.image && (
+                      <img
+                        src={post.image}
+                        alt=""
+                        style={{ width: "100%", borderRadius: 8, marginBottom: 10, display: "block" }}
+                      />
+                    )}
+                    {p.title && (
+                      <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 13.5, color: "#16324F", marginBottom: 5 }}>
+                        {p.title}
+                      </div>
+                    )}
+                    {p.body && (
+                      <div style={{ fontSize: 12.5, color: "#33506E", lineHeight: 1.55 }}>{p.body}</div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           {tab === 1 && (
             <div className="fadein" style={{ position: "relative" }}>
@@ -969,7 +1004,7 @@ export default function App() {
             </div>
           )}
 
-          {tab === 3 && (
+          {tab === 2 && (
             <div className="fadein">
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
                 <div
